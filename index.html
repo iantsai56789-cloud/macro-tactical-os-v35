@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Macro Tactical OS v3.5 - 資金流決策終端</title>
+    <style>
+        :root {
+            --bg-color: #0d1117;
+            --card-bg: #161b22;
+            --text-color: #c9d1d9;
+            --accent-green: #238636;
+            --accent-red: #da3633;
+            --accent-orange: #d29922;
+            --accent-blue: #58a6ff;
+            --border-color: #30363d;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        header {
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        h1 { margin: 0; font-size: 24px; color: #f0f6fc; }
+        .timestamp { font-size: 14px; color: #8b949e; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+            gap: 20px;
+        }
+        .card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 20px;
+        }
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 10px;
+            margin-bottom: 15px;
+        }
+        .card-title { font-size: 18px; font-weight: bold; color: #f0f6fc; }
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: bold;
+        }
+        .bg-success { background-color: var(--accent-green); color: #fff; }
+        .bg-danger { background-color: var(--accent-red); color: #fff; }
+        .bg-warning { background-color: var(--accent-orange); color: #000; }
+        .bg-info { background-color: var(--accent-blue); color: #fff; }
+        
+        .metric-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #21262d;
+            font-size: 14px;
+        }
+        .metric-label { color: #8b949e; }
+        .metric-value { font-weight: 500; }
+        
+        .decision-box {
+            margin-top: 15px;
+            padding: 12px;
+            border-radius: 4px;
+            background-color: #21262d;
+            border-left: 4px solid var(--accent-blue);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <header>
+        <div>
+            <h1>Event-Driven Macro Tactical OS v3.5</h1>
+            <div style="color: #8b949e; font-size: 12px; margin-top: 4px;">機構級核心 Proxy Flow 決策系統</div>
+        </div>
+        <div class="timestamp" id="sync-time">讀取中...</div>
+    </header>
+
+    <div class="grid" id="matrix-container">
+        </div>
+</div>
+
+<script>
+    const REGIME_MAP = {
+        "STRONG_CONTINUATION": { text: "強趨勢延續", class: "bg-success" },
+        "TACTICAL_SQUEEZE": { text: "短期空頭擠壓", class: "bg-warning" },
+        "HEALTHY_PULLBACK": { text: "健康回檔", class: "bg-info" },
+        "STRUCTURAL_RETREAT": { text: "結構性撤退", class: "bg-danger" }
+    };
+
+    // 模擬當前最新市場新聞敘事對稱評分 (未來將由 NLP 模組動態寫入)
+    const MOCK_NEWS_SENTIMENT = {
+        "AI_Semiconductor": 0.45,   // 媒體高度利多
+        "Financial_Value": 0.10,     // 媒體冷淡
+        "Long_Treasury": -0.25       // 媒體偏向利空
+    };
+
+    function evaluateTacticalDecision(key, sector) {
+        const core = sector.core_relative_strength;
+        const ve = sector.confirmation_volume_expansion;
+        const trend = sector.structure_trend_alignment;
+        const diff = sector.breadth_diffusion_score;
+        const news = MOCK_NEWS_SENTIMENT[key] || 0.0;
+
+        // 四層過濾金字塔解譯規則
+        if (core.persistence_regime === "STRUCTURAL_RETREAT") {
+            return `<strong>【絕對禁區 / 結構性撤退】</strong>資金流向呈雙時間尺度雙負狀態。此時不論媒體釋放何種利多，皆判定為散戶誘多噪音，系統強制鎖死持倉，嚴禁逆勢接刀。`;
+        }
+        if (core.persistence_regime === "STRONG_CONTINUATION" && trend === 1 && diff >= 0.8) {
+            if (news > 0.2) {
+                return `<strong>【全面多頭共振 (超配 Overweight)】</strong>量價流與敘事層完美合流。雙時間尺度 RS 強勁，成分股達成 <strong>${diff * 100}% 廣度普漲</strong>。新聞利多 (${news}) 成功驗證資金行為，允許最大化戰術傾斜。`;
+            } else {
+                return `<strong>【資金暗流建倉 (主動關注)】</strong>量價與廣度指標皆極度健康，但媒體敘事尚未全面擴散。此為典型機構暗中佈局之低噪 Alpha 機會，可逢低超配。`;
+            }
+        }
+        if (news > 0.4 && (core.persistence_regime === "TACTICAL_SQUEEZE" || diff <= 0.4)) {
+            return `<strong>【警告：媒體末端狂熱 (拒絕交易)】</strong>快速層新聞情緒高昂 (${news})，但底層 <strong>RS 廣度發生嚴重背離 (僅 ${diff * 100}% 成分股在均線上)</strong>。判定為特定權值股硬拉或媒體掩護出貨，堅決拒絕追高。`;
+        }
+        return `<strong>【常態區間震盪】</strong>資金流速與敘事未達共振臨界點，維持基準配置，不執行主動戰術傾斜。`;
+    }
+
+    async function loadMacroMetrics() {
+        try {
+            // 防止瀏覽器快取機制鎖死資料
+            const response = await fetch(`macro_metrics.json?t=${new Date().getTime()}`);
+            const data = await response.json();
+            
+            document.getElementById('sync-time').innerText = `系統同步時間: ${data.metadata.timestamp} | Engine: ${data.metadata.engine_version}`;
+            
+            const container = document.getElementById('matrix-container');
+            container.innerHTML = ''; // 清空舊畫面
+            
+            const matrix = data.fast_tactical_flow_matrix;
+            
+            for (const [key, sector] of Object.entries(matrix)) {
+                const regimeInfo = REGIME_MAP[sector.core_relative_strength.persistence_regime] || { text: "未知體制", class: "bg-danger" };
+                const decisionText = evaluateTacticalDecision(key, sector);
+                
+                const cardHtml = `
+                    <div class="card">
+                        <div class="card-header">
+                            <div class="card-title">${sector.name} (${sector.anchor_ticker})</div>
+                            <span class="badge ${regimeInfo.class}">${regimeInfo.text}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Fast RS (戰術動能)</span>
+                            <span class="metric-value" style="color: ${sector.core_relative_strength.fast_rs >= 0 ? '#3fb950' : '#f85149'}">${sector.core_relative_strength.fast_rs.toFixed(4)}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Slow RS (戰略配置)</span>
+                            <span class="metric-value" style="color: ${sector.core_relative_strength.slow_rs >= 0 ? '#3fb950' : '#f85149'}">${sector.core_relative_strength.slow_rs.toFixed(4)}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Volume Expansion (量能放大倍數)</span>
+                            <span class="metric-value">${sector.confirmation_volume_expansion}x</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Trend Alignment (多頭均線排列)</span>
+                            <span class="metric-value">${sector.structure_trend_alignment === 1 ? '<span style="color:#3fb950">符合 (EMA20 > EMA60)</span>' : '<span style="color:#f85149">不符合</span>'}</span>
+                        </div>
+                        <div class="metric-row">
+                            <span class="metric-label">Diffusion Score (板塊多頭廣度)</span>
+                            <span class="metric-value" style="font-weight:bold; color: ${sector.breadth_diffusion_score >= 0.8 ? '#3fb950' : '#8b949e'}">${(sector.breadth_diffusion_score * 100).toFixed(0)}%</span>
+                        </div>
+                        <div class="decision-box">
+                            ${decisionText}
+                        </div>
+                    </div>
+                `;
+                container.innerHTML += cardHtml;
+            }
+        } catch (error) {
+            console.error("[-] 無法加載量化矩陣數據:", error);
+            document.getElementById('sync-time').innerText = "數據加載錯誤，請檢查 macro_metrics.json 是否已生成。";
+        }
+    }
+
+    window.onload = loadMacroMetrics;
+</script>
+</body>
+</html>
