@@ -111,11 +111,10 @@
         "STRUCTURAL_RETREAT": { text: "結構性撤退", class: "bg-danger" }
     };
 
-    // 模擬當前最新市場新聞敘事對稱評分 (未來將由 NLP 模組動態寫入)
     const MOCK_NEWS_SENTIMENT = {
-        "AI_Semiconductor": 0.45,   // 媒體高度利多
-        "Financial_Value": 0.10,     // 媒體冷淡
-        "Long_Treasury": -0.25       // 媒體偏向利空
+        "AI_Semiconductor": 0.45,
+        "Financial_Value": 0.10,
+        "Long_Treasury": -0.25
     };
 
     function evaluateTacticalDecision(key, sector) {
@@ -125,33 +124,31 @@
         const diff = sector.breadth_diffusion_score;
         const news = MOCK_NEWS_SENTIMENT[key] || 0.0;
 
-        // 四層過濾金字塔解譯規則
         if (core.persistence_regime === "STRUCTURAL_RETREAT") {
             return `<strong>【絕對禁區 / 結構性撤退】</strong>資金流向呈雙時間尺度雙負狀態。此時不論媒體釋放何種利多，皆判定為散戶誘多噪音，系統強制鎖死持倉，嚴禁逆勢接刀。`;
         }
         if (core.persistence_regime === "STRONG_CONTINUATION" && trend === 1 && diff >= 0.8) {
             if (news > 0.2) {
-                return `<strong>【全面多頭共振 (超配 Overweight)】</strong>量價流與敘事層完美合流。雙時間尺度 RS 強勁，成分股達成 <strong>${diff * 100}% 廣度普漲</strong>。新聞利多 (${news}) 成功驗證資金行為，允許最大化戰術傾斜。`;
+                return `<strong>【全面多頭共振 (超配 Overweight)】</strong>量價流與敘事層完美合流。雙時間尺度 RS 強勁，成分股達成 <strong>${diff * 100}% 廣度普漲</strong>。新聞利多 成功驗證資金行為，允許最大化戰術傾斜。`;
             } else {
                 return `<strong>【資金暗流建倉 (主動關注)】</strong>量價與廣度指標皆極度健康，但媒體敘事尚未全面擴散。此為典型機構暗中佈局之低噪 Alpha 機會，可逢低超配。`;
             }
         }
         if (news > 0.4 && (core.persistence_regime === "TACTICAL_SQUEEZE" || diff <= 0.4)) {
-            return `<strong>【警告：媒體末端狂熱 (拒絕交易)】</strong>快速層新聞情緒高昂 (${news})，但底層 <strong>RS 廣度發生嚴重背離 (僅 ${diff * 100}% 成分股在均線上)</strong>。判定為特定權值股硬拉或媒體掩護出貨，堅決拒絕追高。`;
+            return `<strong>【警告：媒體末端狂熱 (拒絕交易)】</strong>快速層新聞情緒高昂，但底層 <strong>RS 廣度發生嚴重背離 (僅 ${diff * 100}% 成分股在均線上)</strong>。判定為特定權值股硬拉或媒體掩護出貨，堅決拒絕追高。`;
         }
         return `<strong>【常態區間震盪】</strong>資金流速與敘事未達共振臨界點，維持基準配置，不執行主動戰術傾斜。`;
     }
 
     async function loadMacroMetrics() {
         try {
-            // 防止瀏覽器快取機制鎖死資料
             const response = await fetch(`macro_metrics.json?t=${new Date().getTime()}`);
             const data = await response.json();
             
             document.getElementById('sync-time').innerText = `系統同步時間: ${data.metadata.timestamp} | Engine: ${data.metadata.engine_version}`;
             
             const container = document.getElementById('matrix-container');
-            container.innerHTML = ''; // 清空舊畫面
+            container.innerHTML = '';
             
             const matrix = data.fast_tactical_flow_matrix;
             
