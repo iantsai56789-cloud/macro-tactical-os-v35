@@ -16,23 +16,87 @@ BASKETS = {
 }
 
 def fetch_historical_data(ticker, days=150):
-    """安全採集 Yahoo Finance 歷史數據"""
+    """
+    具備雙源備援機制 (Yahoo Finance + Stooq Failover) 的數據採集器
+    自動規避 GitHub Actions 雲端 IP 被阻斷的基礎設施風險
+    """
     end_dt = int(datetime.datetime.now().timestamp())
     start_dt = end_dt - (days * 24 * 60 * 60)
-    url = f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}?period1={start_dt}&period2={end_dt}&interval=1d&events=history"
-    headers = {'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)'}
     
+    # -----------------------------------------------------------------
+    # [第一代碼線路] 嘗試透過 Yahoo Finance 採集 (優化模擬瀏覽器標頭)
+    # -----------------------------------------------------------------
+    yahoo_url = f"https://query1.finance.yahoo.com/v7/finance/download/{ticker}?period1={start_dt}&period2={end_dt}&interval=1d&events=history"
+    
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+    }
+    
+    session = requests.Session()
     try:
-        res = requests.get(url, headers=headers, timeout=15)
+        session.get("https://finance.yahoo.com", headers=headers, timeout=5)
+        res = session.get(yahoo_url, headers=headers, timeout=10)
+        
         if res.status_code == 200:
             df = pd.read_csv(io.StringIO(res.text))
             df['Date'] = pd.to_datetime(df['Date'])
             df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
             df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce')
-            df = df.dropna(subset=['Close', 'Volume']).sort_values('Date').reset_index(drop=True)
-            return df
-    except Exception:
-        pass
+            
+            if ticker == "^VIX":
+                df = df.dropna(subset=['Close']).sort_values('Date').reset_index(drop=True)
+                df['Volume'] = df['Volume'].fillna(0)
+            else:
+                df = df.dropna(subset=['Close', 'Volume']).sort_values('Date').reset_index(drop=True)
+                
+            if len(df) >= 30:
+                print(f"[+] {ticker} 成功透過 Primary Feeder (Yahoo) 採集。")
+                return df
+        else:
+            print(f"[-] Yahoo 響應失敗 (HTTP {res.status_code})。")
+    except Exception as e:
+        print(f"[-] Yahoo 採集線路異常 ({e})。")
+
+    # -----------------------------------------------------------------
+    # [第二代碼線路] 自動斷路切換：Stooq Terminal Fallback
+    # -----------------------------------------------------------------
+    print(f"[!] 觸發斷路器：{ticker} 轉向備援數據源 Stooq 進行數據對齊...")
+    
+    stooq_ticker = "^VIX" if ticker == "^VIX" else f"{ticker}.US"
+    stooq_url = f"https://stooq.com/q/d/l/?s={stooq_ticker}&i=d"
+    
+    try:
+        stooq_res = requests.get(stooq_url, headers={'User-Agent': 'Mozilla/5.0'}, timeout=12)
+        if stooq_res.status_code == 200 and "Date" in stooq_res.text:
+            df = pd.read_csv(io.StringIO(stooq_res.text))
+            
+            df['Date'] = pd.to_datetime(df['Date'])
+            df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+            df['Volume'] = pd.to_numeric(df['Volume'], errors='coerce')
+            
+            if ticker == "^VIX":
+                df = df.dropna(subset=['Close']).sort_values('Date').reset_index(drop=True)
+                df['Volume'] = df['Volume'].fillna(0)
+            else:
+                df = df.dropna(subset=['Close', 'Volume']).sort_values('Date').reset_index(drop=True)
+            
+            start_date_bound = datetime.datetime.now() - datetime.timedelta(days=days)
+            df = df[df['Date'] >= start_date_bound].reset_index(drop=True)
+            
+            if len(df) >= 30:
+                print(f"[+] {ticker} 成功透過 Secondary Feeder (Stooq) 完成補償採集。")
+                return df
+            else:
+                print(f"[-] Stooq 採集回傳數據量不足 ({len(df)} 筆)。")
+        else:
+            print(f"[-] Stooq 備援線路失效，狀態碼: {stooq_res.status_code}")
+    except Exception as e:
+        print(f"[-] 備援線路 Stooq 執行異常: {e}")
+        
     return None
 
 def main():
@@ -43,20 +107,19 @@ def main():
     vix_df = fetch_historical_data("^VIX", days=10)
     
     if spy_df is None or len(spy_df) < 90 or vix_df is None or len(vix_df) == 0:
-        print("[-] 無法取得基準數據，引擎終止。")
+        print("[-] 無法取得基準大盤數據，引擎終止。")
         return
 
     spy_df['Return'] = spy_df['Close'].pct_change()
     current_vix = float(vix_df['Close'].iloc[-1])
-    vix_regime_factor = current_vix / 20.0
 
     spy_20d_ret = float((spy_df['Close'].iloc[-1] - spy_df['Close'].iloc[-20]) / spy_df['Close'].iloc[-20])
     spy_20d_vol = float(spy_df['Return'].tail(20).std() * math.sqrt(252))
     spy_ru = spy_20d_ret / spy_20d_vol if spy_20d_vol > 0 else 0.0
 
-    # 2. 建立同步的時間序列 DataFrame 用於計算矩陣
+    # 2. 建立同步的時間序列與戰術流向矩陣
     asset_data_dict = {}
-    tactical_flow_matrix = {}
+    tactical_flow_layer = {}
     
     for key, info in BASKETS.items():
         df = fetch_historical_data(info["anchor"], days=150)
@@ -64,7 +127,6 @@ def main():
             df['Return'] = df['Close'].pct_change()
             asset_data_dict[key] = df
             
-            # 延續 v3.6 核心流向指標計算
             vol_20d = float(df['Return'].tail(20).std() * math.sqrt(252))
             ret_20d = float((df['Close'].iloc[-1] - df['Close'].iloc[-20]) / df['Close'].iloc[-20])
             ru_asset = ret_20d / vol_20d if vol_20d > 0 else 0.0
@@ -74,12 +136,18 @@ def main():
             beta = float(cov_m[0, 1] / cov_m[1, 1]) if cov_m[1, 1] > 0 else 1.0
             alpha_flow = ru_asset - (beta * spy_ru)
             
-            tactical_flow_matrix[key] = {
+            # 引入 VIX 風險稅扣分機制 (Risk Penalty)
+            risk_penalty = vol_20d * (current_vix / 20.0)
+            final_score = alpha_flow - risk_penalty
+            
+            tactical_flow_layer[key] = {
                 "name": info["name"],
                 "anchor_ticker": info["anchor"],
                 "alpha_flow_score": round(alpha_flow, 4),
                 "dynamic_beta": round(beta, 2),
-                "annual_volatility": round(vol_20d, 4)
+                "annual_volatility": round(vol_20d, 4),
+                "risk_penalty": round(risk_penalty, 4),
+                "final_score": round(final_score, 4)
             }
 
     # 檢查核心資產數據完整性
@@ -122,9 +190,9 @@ def main():
     # 觸發相關性飆升防禦閘
     if avg_correlation > 0.70:
         correlation_regime = "SHOCK_BREACH"
-        global_risk_budget *= 0.60  # 風險預算再防禦性打折
+        global_risk_budget *= 0.60
 
-    # 5. 數值逼近法求解風險平價權重 (Iterative Risk Parity Solver)
+    # 5. 數值編碼逼近法求解風險平價權重 (Iterative Risk Parity Solver)
     n = len(keys)
     w = np.ones(n) / n  # 初始等權重猜測
     lr = 0.1           # 梯度逼近步長
@@ -167,14 +235,14 @@ def main():
     for i, k in enumerate(keys):
         tactical_flow_layer[k]["portfolio_risk_contribution_pct"] = round(float(rc_pct[i]), 4)
 
-    # 7. 輸出機構級結構 Payload
+    # 7. 建立機構級結構化 Payload
     output_payload = {
         "metadata": {
             "timestamp": datetime.datetime.now().strftime('%Y-%m-%d %H:%M'),
             "engine_version": "v3.7_Covariance_Risk_Optimization_Engine"
         },
         "slow_macro_brain": {
-            "current_vix": current_vix,
+            "current_vix": round(current_vix, 2),
             "macro_regime_status": macro_regime,
             "global_risk_budget": round(global_risk_budget, 2),
             "correlation_regime_status": correlation_regime,
@@ -184,10 +252,11 @@ def main():
         "portfolio_output": portfolio_output
     }
 
+    # 安全覆寫寫入本地 JSON 檔案
     with open("macro_metrics.json", "w", encoding="utf-8") as f:
         json.dump(output_payload, f, indent=4, ensure_ascii=False)
         
-    print(f"[+] v3.7 矩陣優化引擎執行完畢。相關性體制: {correlation_regime}({round(avg_correlation, 2)})。")
+    print(f"[+] v3.7 矩陣優化引擎執行完畢。當前體制: {macro_regime}，相關性防護: {correlation_regime}({round(avg_correlation, 2)})。")
 
 if __name__ == "__main__":
     main()
